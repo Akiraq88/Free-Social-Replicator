@@ -1,9 +1,9 @@
 <?php
 /**
  * Plugin Name: Free Social Replicator
- * Plugin URI:  https://github.com/free-social-replicator/free-social-replicator
+ * Plugin URI:  https://github.com/Akiraq88/Free-Social-Replicator
  * Description: Publica automáticamente cada nota nueva en Facebook e Instagram con una imagen con título, resumen corto y enlace mediante la API oficial de Meta Graph.
- * Version:     1.0.0
+ * Version:     1.0.1
  * Author:      Free Social Replicator
  * Requires PHP: 7.4
  * Text Domain: free-social-replicator
@@ -13,7 +13,7 @@ if ( ! defined( 'ABSPATH' ) ) {
 	exit;
 }
 
-define( 'FSR_VERSION', '1.0.0' );
+define( 'FSR_VERSION', '1.0.1' );
 define( 'FSR_DIR', plugin_dir_path( __FILE__ ) );
 define( 'FSR_URL', plugin_dir_url( __FILE__ ) );
 
@@ -25,21 +25,20 @@ require_once FSR_DIR . 'includes/image.php';
 
 function fsr_defaults() {
 	return array(
-		'dry_run'   => '1',      // Modo prueba: genera la imagen y registra, pero no publica nada.
+		'dry_run'   => '1',
 		'fb_on'     => '1',
 		'ig_on'     => '1',
 		'page_id'   => '',
 		'ig_id'     => '',
 		'token'     => '',
 		'api_ver'   => 'v25.0',
-		'delay'     => 3,        // Minutos de espera tras publicar la nota.
-		'max_age'   => 24,       // No publica notas cuya fecha sea más vieja que estas horas.
-		'fb_mode'   => 'photo',  // photo = imagen con título + texto; link = enlace con tarjeta.
+		'delay'     => 3,
+		'max_age'   => 24,
+		'fb_mode'   => 'photo',
 		'img_fmt'   => 'portrait',
 		'tpl_fb'    => "{titulo}\n\n{resumen}\n\nLeé la nota completa 👉 {enlace}",
 		'tpl_ig'    => "{titulo}\n\n{resumen}\n\n👉 Nota completa: enlace en la bio\n\n{hashtags}",
 		'hashtags'  => '#Noticias #Actualidad',
-		'try_font'  => '1',
 	);
 }
 
@@ -143,42 +142,10 @@ function fsr_upload_dir() {
 	if ( ! is_dir( $dir ) ) {
 		wp_mkdir_p( $dir );
 		@file_put_contents( $dir . '/index.php', "<?php\n// Silence is golden.\n" );
-		// Prevenir ejecución de scripts PHP arbitrarios en la carpeta de uploads
 		$htaccess = "<FilesMatch \"\\.(php|phtml|php3|php4|php5|php7|phps)$\">\nDeny from all\n</FilesMatch>\n";
 		@file_put_contents( $dir . '/.htaccess', $htaccess );
 	}
 	return array( $dir, trailingslashit( $u['baseurl'] ) . 'fsr' );
-}
-
-/* Josefin Sans se descarga una vez desde Google Fonts; si no se puede, se usa Poppins Bold incluida. */
-function fsr_font_title() {
-	$fallback = FSR_DIR . 'assets/fonts/Poppins-Bold.ttf';
-	$o        = fsr_opts();
-	if ( empty( $o['try_font'] ) ) {
-		return $fallback;
-	}
-	list( $dir ) = fsr_upload_dir();
-	$file        = $dir . '/JosefinSans-Bold.ttf';
-	if ( is_readable( $file ) && filesize( $file ) > 10000 ) {
-		return $file;
-	}
-	if ( get_transient( 'fsr_font_fail' ) ) {
-		return $fallback;
-	}
-	$res = wp_remote_get( 'https://fonts.googleapis.com/css?family=Josefin+Sans:700', array( 'timeout' => 8, 'sslverify' => true ) );
-	if ( ! is_wp_error( $res ) && 200 === (int) wp_remote_retrieve_response_code( $res ) && preg_match( '/url\((https:[^)]+\.ttf)\)/', wp_remote_retrieve_body( $res ), $m ) ) {
-		$f = wp_remote_get( $m[1], array( 'timeout' => 15, 'sslverify' => true ) );
-		if ( ! is_wp_error( $f ) && 200 === (int) wp_remote_retrieve_response_code( $f ) ) {
-			$body = wp_remote_retrieve_body( $f );
-			$sig  = substr( $body, 0, 4 );
-			if ( strlen( $body ) > 10000 && ( "\x00\x01\x00\x00" === $sig || 'OTTO' === $sig || 'true' === $sig ) ) {
-				file_put_contents( $file, $body );
-				return $file;
-			}
-		}
-	}
-	set_transient( 'fsr_font_fail', 1, 12 * HOUR_IN_SECONDS );
-	return $fallback;
 }
 
 function fsr_logo_path() {
@@ -230,7 +197,7 @@ function fsr_make_image( $post_id ) {
 				'title'      => $title,
 				'category'   => $cats ? $cats[0]->name : '',
 				'footer'     => (string) wp_parse_url( home_url(), PHP_URL_HOST ),
-				'font_title' => fsr_font_title(),
+				'font_title' => FSR_DIR . 'assets/fonts/Poppins-Bold.ttf',
 				'font_label' => FSR_DIR . 'assets/fonts/Poppins-Medium.ttf',
 			)
 		);
@@ -248,8 +215,8 @@ function fsr_make_image( $post_id ) {
 function fsr_graph( $method, $path, $params = array() ) {
 	$o   = fsr_opts();
 	$url = 'https://graph.facebook.com/' . rawurlencode( $o['api_ver'] ) . '/' . ltrim( $path, '/' );
-	
-	// Cabecera de Autorización Bearer para evitar exponer el token en la query string de la URL
+
+	// Cabecera Bearer para evitar exponer el token en la query string
 	$headers = array(
 		'Accept' => 'application/json',
 	);
@@ -266,7 +233,6 @@ function fsr_graph( $method, $path, $params = array() ) {
 	if ( 'GET' === $method ) {
 		$res = wp_remote_get( add_query_arg( $params, $url ), $args );
 	} else {
-		// En POST pasamos params en body; mantenemos access_token en body por compatibilidad con endpoints específicos de fotos
 		$params['access_token'] = $o['token'];
 		$args['body']           = $params;
 		$res                    = wp_remote_post( $url, $args );
@@ -282,7 +248,6 @@ function fsr_graph( $method, $path, $params = array() ) {
 	}
 	$msg   = isset( $j['error']['message'] ) ? $j['error']['message'] : 'Respuesta HTTP ' . $code;
 	$ecode = isset( $j['error']['code'] ) ? (int) $j['error']['code'] : 0;
-	// Token vencido o inválido (190), permisos (10, 200-299) y parámetros inválidos (100): reintentar no sirve.
 	$fatal = in_array( $ecode, array( 190, 10, 100, 102 ), true ) || ( $ecode >= 200 && $ecode < 300 );
 	return new WP_Error( 'fsr_api', $msg . ( $ecode ? ' (código ' . $ecode . ')' : '' ), array( 'fatal' => $fatal ) );
 }
@@ -292,6 +257,9 @@ function fsr_post_fb( $post, $img, $o ) {
 	if ( 'link' === $o['fb_mode'] ) {
 		$r = fsr_graph( 'POST', $o['page_id'] . '/feed', array( 'message' => $caption, 'link' => get_permalink( $post ) ) );
 	} else {
+		if ( ! $img || ! isset( $img['url'] ) ) {
+			return new WP_Error( 'fsr_noimg', 'No hay imagen disponible para publicar en Facebook.' );
+		}
 		$r = fsr_graph( 'POST', $o['page_id'] . '/photos', array( 'url' => $img['url'], 'message' => $caption, 'published' => 'true' ) );
 	}
 	if ( is_wp_error( $r ) ) {
@@ -301,6 +269,9 @@ function fsr_post_fb( $post, $img, $o ) {
 }
 
 function fsr_post_ig( $post, $img, $o ) {
+	if ( ! $img || ! isset( $img['url'] ) ) {
+		return new WP_Error( 'fsr_noimg', 'Instagram requiere una imagen para publicar.' );
+	}
 	$pid = $post->ID;
 	$cid = get_post_meta( $pid, '_fsr_ig_container', true );
 	if ( ! $cid ) {
@@ -311,7 +282,7 @@ function fsr_post_ig( $post, $img, $o ) {
 		$cid = $r['id'];
 		update_post_meta( $pid, '_fsr_ig_container', $cid );
 	}
-	
+
 	// Polling optimizado para no exceder timeouts de Hostinger / LiteSpeed
 	$ready = false;
 	for ( $i = 0; $i < 4; $i++ ) {
@@ -331,7 +302,6 @@ function fsr_post_ig( $post, $img, $o ) {
 		sleep( 2 );
 	}
 	if ( ! $ready ) {
-		// No se descarta el contenedor, se programa reintento en el próximo ciclo
 		return new WP_Error( 'fsr_ig', 'Instagram continúa procesando la imagen. Se reintentará en breve.', array( 'fatal' => false ) );
 	}
 	$r = fsr_graph( 'POST', $o['ig_id'] . '/media_publish', array( 'creation_id' => $cid ) );
@@ -355,7 +325,14 @@ function fsr_on_transition( $new, $old, $post ) {
 	if ( get_post_meta( $post->ID, '_fsr_skip', true ) ) {
 		return;
 	}
-	$age = time() - strtotime( $post->post_date_gmt . ' UTC' );
+
+	// Cálculo seguro de antigüedad con fallback para GMT no inicializada
+	$raw_date  = ( ! empty( $post->post_date_gmt ) && '0000-00-00 00:00:00' !== $post->post_date_gmt ) ? $post->post_date_gmt : $post->post_date;
+	$post_time = strtotime( $raw_date . ' UTC' );
+	if ( false === $post_time ) {
+		$post_time = time();
+	}
+	$age = time() - $post_time;
 	if ( $age > (int) $o['max_age'] * HOUR_IN_SECONDS ) {
 		return;
 	}
@@ -379,16 +356,23 @@ function fsr_run( $post_id, $attempt = 1 ) {
 	}
 	set_transient( $lock, 1, 3 * MINUTE_IN_SECONDS );
 
-	$o   = fsr_opts();
-	$img = fsr_make_image( $post_id );
-	if ( is_wp_error( $img ) ) {
-		fsr_log( $post_id, 'img', 'error', $img->get_error_message() );
-		update_post_meta( $post_id, '_fsr_status', 'Error al generar la imagen' );
-		delete_transient( $lock );
-		if ( $attempt < 3 ) {
-			wp_schedule_single_event( time() + 300 * $attempt, 'fsr_run', array( $post_id, $attempt + 1 ) );
+	$o = fsr_opts();
+
+	// Solo generar imagen si Instagram está activo o Facebook está en modo 'photo'
+	$needs_img = ( ! empty( $o['ig_on'] ) || ( ! empty( $o['fb_on'] ) && 'photo' === $o['fb_mode'] ) );
+	$img       = null;
+
+	if ( $needs_img ) {
+		$img = fsr_make_image( $post_id );
+		if ( is_wp_error( $img ) ) {
+			fsr_log( $post_id, 'img', 'error', $img->get_error_message() );
+			update_post_meta( $post_id, '_fsr_status', 'Error al generar la imagen' );
+			delete_transient( $lock );
+			if ( $attempt < 3 ) {
+				wp_schedule_single_event( time() + 300 * $attempt, 'fsr_run', array( $post_id, $attempt + 1 ) );
+			}
+			return;
 		}
-		return;
 	}
 
 	$retry   = false;
@@ -402,7 +386,8 @@ function fsr_run( $post_id, $attempt = 1 ) {
 			continue;
 		}
 		if ( ! empty( $o['dry_run'] ) ) {
-			fsr_log( $post_id, $net, 'dry', 'Modo prueba: se habría publicado en ' . $label . '. Imagen: ' . $img['url'] );
+			$img_info = ( $img && isset( $img['url'] ) ) ? ' Imagen: ' . $img['url'] : '';
+			fsr_log( $post_id, $net, 'dry', 'Modo prueba: se habría publicado en ' . $label . '.' . $img_info );
 			$summary[] = $label . ': prueba (no se publicó)';
 			continue;
 		}
@@ -505,10 +490,9 @@ function fsr_admin_save() {
 	$new['dry_run']  = empty( $p['dry_run'] ) ? '0' : '1';
 	$new['fb_on']    = empty( $p['fb_on'] ) ? '0' : '1';
 	$new['ig_on']    = empty( $p['ig_on'] ) ? '0' : '1';
-	$new['try_font'] = empty( $p['try_font'] ) ? '0' : '1';
 	$new['page_id']  = preg_replace( '/[^0-9]/', '', isset( $p['page_id'] ) ? $p['page_id'] : '' );
 	$new['ig_id']    = preg_replace( '/[^0-9]/', '', isset( $p['ig_id'] ) ? $p['ig_id'] : '' );
-	
+
 	if ( isset( $p['token'] ) ) {
 		$sanitized_token = sanitize_text_field( $p['token'] );
 		if ( '' !== trim( $sanitized_token ) ) {
@@ -518,7 +502,7 @@ function fsr_admin_save() {
 	if ( ! empty( $p['clear_token'] ) ) {
 		$new['token'] = '';
 	}
-	
+
 	$api_ver_input   = isset( $p['api_ver'] ) ? sanitize_text_field( $p['api_ver'] ) : '';
 	$new['api_ver']  = preg_match( '/^v\d{1,3}\.\d$/', $api_ver_input ) ? $api_ver_input : $old['api_ver'];
 	$new['delay']    = max( 1, min( 120, (int) ( isset( $p['delay'] ) ? $p['delay'] : 3 ) ) );
@@ -528,7 +512,7 @@ function fsr_admin_save() {
 	$new['tpl_fb']   = sanitize_textarea_field( isset( $p['tpl_fb'] ) ? $p['tpl_fb'] : $old['tpl_fb'] );
 	$new['tpl_ig']   = sanitize_textarea_field( isset( $p['tpl_ig'] ) ? $p['tpl_ig'] : $old['tpl_ig'] );
 	$new['hashtags'] = sanitize_text_field( isset( $p['hashtags'] ) ? $p['hashtags'] : $old['hashtags'] );
-	
+
 	update_option( 'fsr_opts', $new, false );
 	fsr_notice( 'success', 'Ajustes guardados.' );
 	fsr_back();
@@ -701,7 +685,6 @@ function fsr_settings_page() {
 				<tr><th><label for="tpl_ig">Texto de Instagram</label></th><td><textarea id="tpl_ig" name="tpl_ig" rows="6" class="large-text"><?php echo esc_textarea( $o['tpl_ig'] ); ?></textarea>
 					<p class="description">En Instagram los enlaces del texto no son clickeables; por eso se recomienda indicar "enlace en la bio".</p></td></tr>
 				<tr><th><label for="hashtags">Hashtags por defecto</label></th><td><input id="hashtags" name="hashtags" type="text" class="large-text" value="<?php echo esc_attr( $o['hashtags'] ); ?>"></td></tr>
-				<tr><th>Tipografía de título</th><td><label><input type="checkbox" name="try_font" value="1" <?php checked( $o['try_font'], '1' ); ?>> Intentar usar Josefin Sans (descarga automática desde Google Fonts); si no se puede, se usa Poppins (incluida)</label></td></tr>
 			</table>
 			<?php submit_button( 'Guardar ajustes' ); ?>
 		</form>
@@ -713,7 +696,7 @@ function fsr_settings_page() {
 				&nbsp;<a class="button" target="_blank" rel="noopener" href="<?php echo esc_url( wp_nonce_url( admin_url( 'admin-post.php?action=fsr_preview&post=' . $last[0]->ID ), 'fsr_preview_' . $last[0]->ID ) ); ?>">Ver la imagen de la última nota</a>
 			<?php endif; ?>
 		</p>
-		<p class="description">Envíos programados en espera: <?php echo (int) $pending; ?>. Si tu WordPress tiene WP-Cron desactivado (DISABLE_WP_CRON), asegurate de tener un Cron de sistema configurado en tu panel de hosting.</p>
+		<p class="description">Envíos programados en espera: <?php echo (int) $pending; ?>. Si tu WordPress tiene WP-Cron desactivado (DISABLE_WP_CRON), aseguráte de tener un Cron de sistema configurado en tu panel de hosting.</p>
 
 		<h2>Actividad reciente</h2>
 		<?php if ( empty( $log ) ) : ?>
