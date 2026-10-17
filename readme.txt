@@ -4,7 +4,7 @@ Tags: social media, auto post, facebook, instagram, meta graph api, social auto 
 Requires at least: 5.8
 Tested up to: 6.7
 Requires PHP: 7.4
-Stable tag: 1.0.0
+Stable tag: 1.0.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -32,12 +32,18 @@ Publica automáticamente cada nueva entrada en Facebook e Instagram con una imag
 == Frequently Asked Questions ==
 
 = ¿Qué requisitos necesita el servidor? =
-PHP 7.4 o superior con la extensión GD y soporte FreeType activados.
+PHP 7.4 o superior con la extensión GD y soporte FreeType activados (solo requerido si se publican imágenes).
 
 = ¿Cómo obtengo el token de Meta Graph API? =
 Crea una App en developers.facebook.com de tipo Empresa ("Business"), añade los productos Facebook Pages e Instagram Graph API, y obtén un token de acceso de página con permisos `pages_manage_posts`, `pages_read_engagement`, `instagram_basic`, `instagram_content_publish`.
 
 == Changelog ==
+
+= 1.0.1 =
+* Optimización de rendimiento: generación condicional de imagen únicamente cuando una red activa la requiere.
+* Eliminación de scraper remoto de Google Fonts; uso exclusivo de tipografías locales Poppins.
+* Limpieza completa de postmeta en uninstall.php al eliminar el plugin.
+* Manejo robusto de fechas GMT no inicializadas en entradas programadas.
 
 = 1.0.0 =
 * Versión inicial oficial de Free Social Replicator.
