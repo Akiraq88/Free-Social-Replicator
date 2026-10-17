@@ -1,2 +1,1 @@
 Poppins - Indian Type Foundry, Jonny Pinhorn, Ninad Kahale. Licencia SIL Open Font License 1.1 (ver https://openfontlicense.org).
-Josefin Sans - Santiago Orozco. Licencia SIL Open Font License 1.1; si se descarga, se guarda en wp-content/uploads/fsr/.
